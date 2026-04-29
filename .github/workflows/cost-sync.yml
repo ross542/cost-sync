@@ -2,10 +2,10 @@ name: Unleashed → Shopify cost sync
 
 on:
   schedule:
-    # Sun + Thu 23:00 UTC = Mon + Fri 09:00 AEST (10:00 AEDT in summer).
+    # Sun 23:00 UTC = Mon 09:00 AEST (10:00 AEDT in summer).
     # Inside Australian business hours year-round so the team can action
     # any errors / mismatches the same day.
-    - cron: '0 23 * * SUN,THU'
+    - cron: '0 23 * * SUN'
   workflow_dispatch:
     inputs:
       dry_run:
