@@ -1,0 +1,50 @@
+name: Unleashed → Shopify cost sync
+
+on:
+  schedule:
+    # Sun + Thu 23:00 UTC = Mon + Fri 09:00 AEST (10:00 AEDT in summer).
+    # Inside Australian business hours year-round so the team can action
+    # any errors / mismatches the same day.
+    - cron: '0 23 * * SUN,THU'
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Dry run only (no writes to Shopify)'
+        type: boolean
+        default: false
+      sample_size:
+        description: 'Cap writes to N (0 = no cap)'
+        type: string
+        default: '0'
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - run: pip install -r requirements.txt
+
+      - name: Run cost sync
+        env:
+          UNLEASHED_API_ID: ${{ secrets.UNLEASHED_API_ID }}
+          UNLEASHED_API_KEY: ${{ secrets.UNLEASHED_API_KEY }}
+          SHOPIFY_STORE: ${{ secrets.SHOPIFY_STORE }}
+          SHOPIFY_ADMIN_TOKEN: ${{ secrets.SHOPIFY_ADMIN_TOKEN }}
+          DRY_RUN: ${{ github.event.inputs.dry_run || 'false' }}
+          SAMPLE_SIZE: ${{ github.event.inputs.sample_size || '0' }}
+          MAX_DELTA_PCT: '50'
+        run: python unleashed_to_shopify_cost_sync.py
+
+      - name: Upload report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cost-sync-report-${{ github.run_id }}
+          path: cost_sync_report_*.csv
+          retention-days: 90
