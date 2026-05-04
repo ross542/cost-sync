@@ -72,10 +72,13 @@ def fetch_unleashed_costs() -> dict[str, Decimal]:
             sku = (p.get("ProductCode") or "").strip().upper()
             if not sku:
                 continue
+            avg = p.get("AverageLandPrice")
             last = p.get("LastCost")
             default = p.get("DefaultPurchasePrice")
             chosen: Decimal | None = None
-            if last is not None and Decimal(str(last)) > 0:
+            if avg is not None and Decimal(str(avg)) > 0:
+                chosen = Decimal(str(avg))
+            elif last is not None and Decimal(str(last)) > 0:
                 chosen = Decimal(str(last))
             elif default is not None and Decimal(str(default)) > 0:
                 chosen = Decimal(str(default))
@@ -84,7 +87,7 @@ def fetch_unleashed_costs() -> dict[str, Decimal]:
         if page >= body.get("Pagination", {}).get("NumberOfPages", 1):
             break
         page += 1
-    log.info("Unleashed: %d SKUs with LastCost", len(costs))
+    log.info("Unleashed: %d SKUs with cost (AvgLandPrice→LastCost→DefaultPurchasePrice)", len(costs))
     return costs
 
 
