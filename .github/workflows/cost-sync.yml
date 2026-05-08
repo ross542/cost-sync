@@ -48,3 +48,10 @@ jobs:
           name: cost-sync-report-${{ github.run_id }}
           path: cost_sync_report_*.csv
           retention-days: 90
+
+      - name: Post Slack summary
+        if: always()
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: python notify_slack.py "${{ job.status }}"
