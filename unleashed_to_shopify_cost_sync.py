@@ -49,22 +49,55 @@ def _unleashed_sig(qs: str) -> str:
     ).decode()
 
 
+def _get_with_retry(
+    url: str, headers: dict, *, timeout: int = 60, max_attempts: int = 5
+) -> requests.Response:
+    """GET with exponential backoff on timeout / connection / 5xx errors.
+
+    Unleashed (and to a lesser extent Shopify) occasionally take >30s to
+    respond when the runner happens to land on a slow upstream node.
+    Retrying with backoff turns those transient hiccups into a recoverable
+    delay rather than a hard job failure.
+    """
+    last_exc: Exception | None = None
+    for attempt in range(1, max_attempts + 1):
+        try:
+            r = requests.get(url, headers=headers, timeout=timeout)
+            if 500 <= r.status_code < 600:
+                raise requests.HTTPError(f"{r.status_code} server error", response=r)
+            r.raise_for_status()
+            return r
+        except (
+            requests.Timeout,
+            requests.ConnectionError,
+            requests.HTTPError,
+        ) as e:
+            last_exc = e
+            if attempt == max_attempts:
+                break
+            backoff = min(2 ** attempt, 30)  # 2, 4, 8, 16, 30s
+            log.warning(
+                "GET failed (attempt %d/%d): %s — retrying in %ds",
+                attempt, max_attempts, e, backoff,
+            )
+            time.sleep(backoff)
+    raise RuntimeError(f"GET {url} failed after {max_attempts} attempts: {last_exc}")
+
+
 def fetch_unleashed_costs() -> dict[str, Decimal]:
     # Keyed by upper-cased SKU. Falls back to DefaultPurchasePrice when LastCost is null/0.
     costs: dict[str, Decimal] = {}
     page, page_size = 1, 200
     while True:
         qs = f"pageSize={page_size}"
-        r = requests.get(
+        r = _get_with_retry(
             f"{UNLEASHED_BASE}/Products/{page}?{qs}",
             headers={
                 "api-auth-id": UNLEASHED_API_ID,
                 "api-auth-signature": _unleashed_sig(qs),
                 "Accept": "application/json",
             },
-            timeout=30,
         )
-        r.raise_for_status()
         body = r.json()
         for p in body.get("Items", []):
             if p.get("IsObsoleted") or p.get("IsSellable") is False:
@@ -96,7 +129,7 @@ def shopify_gql(query: str, variables: dict | None = None) -> dict:
         SHOPIFY_GQL,
         headers={"X-Shopify-Access-Token": SHOPIFY_TOKEN, "Content-Type": "application/json"},
         json={"query": query, "variables": variables or {}},
-        timeout=30,
+        timeout=60,
     )
     r.raise_for_status()
     body = r.json()
